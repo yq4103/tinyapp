@@ -32,7 +32,11 @@ app.get("/u/:shortURL", (req, res) => {
   res.redirect(longURL);
 });
 
-//can get the correct page if add https:// infront of the url.
+//Add a POST route that removes a URL resource
+app.post("/urls/:shortURL/delete", (req, res) => {
+  delete urlDatabase[req.params.shortURL];
+  res.redirect("/urls/");
+});
 
 //render urls_new.ejs
 app.get("/urls/new", (req, res) => {
