@@ -23,7 +23,7 @@ app.post("/urls", (req, res) => {
   const shortURL = generateRandomString();
   const url = req.body;
   urlDatabase[shortURL] = url.longURL;
-  res.redirect("/urls/" + shortURL);
+  res.redirect(`/urls/${shortURL}`);
 });
 
 //Redirect any request to "/u/:shortURL" to its longURL
@@ -36,6 +36,14 @@ app.get("/u/:shortURL", (req, res) => {
 app.post("/urls/:shortURL/delete", (req, res) => {
   delete urlDatabase[req.params.shortURL];
   res.redirect("/urls/");
+});
+
+//Add a POST route that updates a URL resource
+app.post("/urls/:shortURL", (req, res) => {
+  const shortURL = req.params.shortURL;
+  const longURL = req.body.longURL;
+  urlDatabase[shortURL] = longURL;
+  res.redirect(`/urls/${shortURL}`);
 });
 
 //render urls_new.ejs
