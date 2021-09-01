@@ -4,6 +4,9 @@ const PORT = 8080; // default port 8080
 //The body-parser library will convert the request body from a Buffer into string that we can read.
 const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({extended: true}));
+const cookieParser = require('cookie-parser');
+app.use(cookieParser());
+
 
 app.set("view engine", "ejs");
 
@@ -39,6 +42,7 @@ app.post("/urls/:shortURL/delete", (req, res) => {
 });
 
 //Add a POST route that updates a URL resource
+//note: re.body is this object { longURL: 'http://www.youtube.com' }
 app.post("/urls/:shortURL", (req, res) => {
   const shortURL = req.params.shortURL;
   const longURL = req.body.longURL;
@@ -46,20 +50,36 @@ app.post("/urls/:shortURL", (req, res) => {
   res.redirect(`/urls/${shortURL}`);
 });
 
+//Add an endpoint to handle a POST to /login in your Express server, set a cookie named username
+app.post("/login", (req, res) => {
+  res.cookie("username", req.body.username);
+  res.redirect("/urls");
+  //const templateVars = { username: req.cookies["username"] } is used to display the username, and it is passed it to new/index/show
+
+});
+
+app.post("/logout", (req, res) => {
+  res.clearCookie("username");
+  res.redirect("/urls");
+  ///logout endpoint so that it clears the username cookie and redirects the user back to the /urls page
+
+});
+
 //render urls_new.ejs
 app.get("/urls/new", (req, res) => {
-  res.render("urls_new");
+  const templateVars = { username: req.cookies["username"] };
+  res.render("urls_new", templateVars);
 });
 
 //render urls_index.ejs
 app.get("/urls", (req, res) => {
-  const templateVars = { urls: urlDatabase };
+  const templateVars = { urls: urlDatabase, username: req.cookies["username"] };
   res.render("urls_index", templateVars);
 });
 
 //render urls.show.ejs
 app.get("/urls/:shortURL", (req, res) => {
-  const templateVars = { shortURL: req.params.shortURL, longURL: urlDatabase[req.params.shortURL] };
+  const templateVars = { shortURL: req.params.shortURL, longURL: urlDatabase[req.params.shortURL], username: req.cookies["username"] };
   res.render("urls_show", templateVars);
 });
 
