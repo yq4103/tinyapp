@@ -8,6 +8,8 @@ app.use(bodyParser.urlencoded({extended: true}));
 app.use(cookieParser());
 app.set("view engine", "ejs");
 
+const bcrypt = require('bcryptjs');
+
 //function to generate a random string for short url
 function generateRandomString() {
   return Math.random().toString(36).substr(2, 6);
@@ -34,15 +36,17 @@ const users = {
   "userRandomID": {
     id: "userRandomID", 
     email: "a1@a.com", 
-    password: "111"
+    password: bcrypt.hashSync("111", 10)
   },
  "user2RandomID": {
     id: "user2RandomID", 
     email: "a2@a.com", 
-    password: "111"
+    password: bcrypt.hashSync("222", 10)
   }
 };
 
+
+//this function checks if a shortURL is in the urlDatabase, which is used to make sure that a logged in user can only see and modify their own URLs.
 const getUserUrl = (userID, urlDatabase) => {
   const userURL = {};
   for (const shortURL in urlDatabase) {
@@ -62,7 +66,6 @@ const findUserByEmail = (email, users) => {
       return users[user_id]; // return the user object
     }
   }
-
   return false;
 };
 
@@ -72,64 +75,37 @@ app.post("/urls", (req, res) => {
   const shortURL = generateRandomString();
   const longURL = req.body.longURL;
   const userID = req.cookies["user_id"];
+  //if userID is not in the user datebase, ask the user to login first
   if (!userID) {
     return res.status(403).send("Login first.");
   }
-  urlDatabase[shortURL] = { longURL, userID }
+  urlDatabase[shortURL] = { longURL, userID };
   //urlDatabase[shortURL].userID = req.cookies["user_id"];
   //a none logged in user cannot add a new url with a POST request to /urls
   
   res.redirect(`/urls/${shortURL}`);
 });
 
-//If someone is not logged in when trying to access /urls/new , redirect them to the login page
 
-
-//Redirect any request to "/u/:shortURL" to its longURL
-app.get("/u/:shortURL", (req, res) => {
-  const urlObj = urlDatabase[req.params.shortURL];
-  if(!urlObj) {
-    return res.status(403).send("Your short URL is not valid.");
-  }
-  res.redirect(urlObj.longURL);
-});
-
-//Add a POST route that removes a URL resource
-app.post("/urls/:shortURL/delete", (req, res) => {
-  const shortURL= req.params.shortURL;
+//render urls_index.ejs
+app.get("/urls", (req, res) => {
   const userID = req.cookies["user_id"];
-  if (!userID) {
-    return res.redirect("/login");
-  }
-  const urlObj = urlDatabase[shortURL];
-  if (!urlObj) {
-    return res.status(403).send("You have an invalid short URL.");
-  }
-  if (userID !== urlObj.userID) {
-    return res.status(403).send("You do not have permission to visit this page.");
-  }
-  delete urlDatabase[req.params.shortURL];
-  res.redirect("/urls/");
+  const urls = getUserUrl(userID, urlDatabase);
+  const templateVars = { urls, user: users[req.cookies["user_id"]] };
+  res.render("urls_index", templateVars);
 });
 
-//Add a POST route that updates a URL resource
-//note: re.body is like this object { longURL: 'http://www.youtube.com' }
-app.post("/urls/:shortURL", (req, res) => {
-  const shortURL = req.params.shortURL;
-  const longURL = req.body.longURL;
-  urlDatabase[shortURL].longURL = longURL;
-  res.redirect(`/urls/${shortURL}`);
-});
 
 //Add an endpoint to handle a POST to /login in your Express server, set a cookie named username
 app.post("/login", (req, res) => {
   const { email, password } = req.body;
   //check if an email already exists
   const user = findUserByEmail(email, users);
+  console.log("this is an object", user);
   if (!user) {
     return res.status(403).send("Email address is not found.");
   }
-  if (user.password !== password) {
+  if (!bcrypt.compareSync(password, user.password)) {
     return res.status(403).send("Wrong credentials.");
   }
   res.cookie("user_id", user.id);
@@ -162,7 +138,7 @@ app.get('/register', (req, res) => {
 app.post("/register", (req, res) => {
   console.log("register")
   const email = req.body.email;
-  const password = req.body.password;
+  const password = bcrypt.hashSync(req.body.password, 10);
 
   //check if an email already exists
   const userFound = findUserByEmail(email, users);
@@ -201,12 +177,25 @@ app.get("/urls/new", (req, res) => {
   res.render("urls_new", templateVars);
 });
 
-//render urls_index.ejs
-app.get("/urls", (req, res) => {
-  const userID = req.cookies["user_id"];
-  const urls = getUserUrl(userID, urlDatabase);
-  const templateVars = { urls, user: users[req.cookies["user_id"]] };
-  res.render("urls_index", templateVars);
+//Redirect any request to "/u/:shortURL" to its longURL
+app.get("/u/:shortURL", (req, res) => {
+  const urlObj = urlDatabase[req.params.shortURL];
+  //if the short url is not valid
+  if(!urlObj) {
+    return res.status(403).send("Your short URL is not valid.");
+  }
+  res.redirect(urlObj.longURL);
+});
+
+
+
+//Add a POST route that updates a URL resource
+//note: req.body is like this object { longURL: 'http://www.youtube.com' }
+app.post("/urls/:shortURL", (req, res) => {
+  const shortURL = req.params.shortURL;
+  const longURL = req.body.longURL;
+  urlDatabase[shortURL].longURL = longURL;
+  res.redirect(`/urls/${shortURL}`);
 });
 
 //render urls.show.ejs
@@ -227,6 +216,29 @@ app.get("/urls/:shortURL", (req, res) => {
   const templateVars = { shortURL, longURL: urlObj.longURL, user };
   res.render("urls_show", templateVars);
 });
+
+
+//Add a POST route that removes a URL resource
+app.post("/urls/:shortURL/delete", (req, res) => {
+  const shortURL= req.params.shortURL;
+  const userID = req.cookies["user_id"];
+  //if not logged in, redirect to login page
+  if (!userID) {
+    return res.redirect("/login");
+  }
+  const urlObj = urlDatabase[shortURL];
+  //only the owner of a shortURL can delete it
+  if (!urlObj) {
+    return res.status(403).send("You have an invalid short URL.");
+  }
+  if (userID !== urlObj.userID) {
+    return res.status(403).send("You do not have permission to visit this page.");
+  }
+  delete urlDatabase[req.params.shortURL];
+  res.redirect("/urls/");
+});
+
+
 
 app.get("/", (req, res) => {
   res.send("Hello!");
