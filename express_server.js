@@ -2,11 +2,18 @@ const express = require("express");
 const app = express();
 const PORT = 8080; // default port 8080
 const bodyParser = require("body-parser"); //The body-parser library will convert the request body from a Buffer into string that we can read.
-const cookieParser = require('cookie-parser');
+//const cookieParser = require('cookie-parser');
+const cookieSession = require('cookie-session');
+
 
 app.use(bodyParser.urlencoded({extended: true}));
-app.use(cookieParser());
+//app.use(cookieParser());
 app.set("view engine", "ejs");
+app.use(cookieSession({
+  name: 'session',
+  keys: ['key1', 'key2']
+}))
+
 
 const bcrypt = require('bcryptjs');
 
@@ -45,36 +52,14 @@ const users = {
   }
 };
 
-
-//this function checks if a shortURL is in the urlDatabase, which is used to make sure that a logged in user can only see and modify their own URLs.
-const getUserUrl = (userID, urlDatabase) => {
-  const userURL = {};
-  for (const shortURL in urlDatabase) {
-    if (urlDatabase[shortURL].userID === userID) {
-      userURL[shortURL] = urlDatabase[shortURL];
-    }
-  }
-  return userURL;
-};
-
-// return the user obj containing all the info if email is found
-// otherwise return false
-const findUserByEmail = (email, users) => {
-  // return Object.keys(usersDb).find(key => usersDb[key].email === email)
-  for (let user_id in users) {
-    if (users[user_id].email === email) {
-      return users[user_id]; // return the user object
-    }
-  }
-  return false;
-};
+const { getUserUrl, findUserByEmail } = require("./helpers");
 
 //when express server receives a POST request to /urls it responds with a redirection to /urls/:shortURL, where shortURL is the random string we generated
 app.post("/urls", (req, res) => {
   console.log(req.body);  // Log the POST request body to the console
   const shortURL = generateRandomString();
   const longURL = req.body.longURL;
-  const userID = req.cookies["user_id"];
+  const userID = req.session.user_id;
   //if userID is not in the user datebase, ask the user to login first
   if (!userID) {
     return res.status(403).send("Login first.");
@@ -89,9 +74,9 @@ app.post("/urls", (req, res) => {
 
 //render urls_index.ejs
 app.get("/urls", (req, res) => {
-  const userID = req.cookies["user_id"];
+  const userID = req.session.user_id;
   const urls = getUserUrl(userID, urlDatabase);
-  const templateVars = { urls, user: users[req.cookies["user_id"]] };
+  const templateVars = { urls, user: users[req.session.user_id] };
   res.render("urls_index", templateVars);
 });
 
@@ -108,7 +93,7 @@ app.post("/login", (req, res) => {
   if (!bcrypt.compareSync(password, user.password)) {
     return res.status(403).send("Wrong credentials.");
   }
-  res.cookie("user_id", user.id);
+  req.session["user_id"] = user.id;
   res.redirect("/urls");
   //const templateVars = { username: req.cookies["username"] } is used to display the username, and it is passed it to new/index/show
 
@@ -116,12 +101,12 @@ app.post("/login", (req, res) => {
 
 //Add a GET /login endpoint that responds with the login.ejs
 app.get('/login', (req, res) => {
-  const templateVars = { user: users[req.cookies["user_id"]] };
+  const templateVars = { user: users[req.session.user_id] };
   res.render('urls_login', templateVars);
 });
 
 app.post("/logout", (req, res) => {
-  res.clearCookie("user_id");
+  req.session = null;
   res.redirect("/urls");
   ///logout endpoint so that it clears the username cookie and redirects the user back to the /urls page
 
@@ -129,7 +114,7 @@ app.post("/logout", (req, res) => {
 
 //app get for displaying registration page
 app.get('/register', (req, res) => {
-  const templateVars = { user: users[req.cookies["user_id"]] };
+  const templateVars = { user: users[req.session.user_id] };
   res.render('urls_register', templateVars);
 });
 
@@ -163,17 +148,17 @@ app.post("/register", (req, res) => {
   // Adding user info to users
   users[user_id] = newUser;
   console.log("this is a new user", newUser)
-  res.cookie("user_id", user_id);
+  req.session["user_id"] = user.id;
   res.redirect("/urls");
 });
 
 //render urls_new.ejs
 app.get("/urls/new", (req, res) => {
-  const user_id = req.cookies["user_id"];
+  const user_id = req.session.user_id;
   if (!user_id) {
     return res.redirect("/login");
   }
-  const templateVars = { user: users[req.cookies["user_id"]] };
+  const templateVars = { user: users[req.session.user_id] };
   res.render("urls_new", templateVars);
 });
 
@@ -201,7 +186,7 @@ app.post("/urls/:shortURL", (req, res) => {
 //render urls.show.ejs
 app.get("/urls/:shortURL", (req, res) => {
   const shortURL= req.params.shortURL;
-  const userID = req.cookies["user_id"];
+  const userID = req.session.user_id;
   if (!userID) {
     return res.redirect("/login");
   }
@@ -221,7 +206,7 @@ app.get("/urls/:shortURL", (req, res) => {
 //Add a POST route that removes a URL resource
 app.post("/urls/:shortURL/delete", (req, res) => {
   const shortURL= req.params.shortURL;
-  const userID = req.cookies["user_id"];
+  const userID = req.session.user_id;
   //if not logged in, redirect to login page
   if (!userID) {
     return res.redirect("/login");
